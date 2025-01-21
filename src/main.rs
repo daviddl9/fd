@@ -13,7 +13,6 @@ mod output;
 mod regex_helper;
 mod walk;
 
-use dirs;
 use std::env;
 use std::io::IsTerminal;
 use std::path::Path;
@@ -159,7 +158,8 @@ fn ensure_search_pattern_is_not_a_path(opts: &Opts) -> Result<()> {
              If you want to search for all files inside the '{pattern}' directory, use a match-all pattern:\n\n  \
              fd . '{pattern}'\n\n\
              Instead, if you want your pattern to match the full file path, use:\n\n  \
-             fd --full-path '{pattern}'",
+             fd --full-path '{pattern}'\n\n\
+             Note: Glob patterns like *.log or *.pdf are automatically detected.",
             pattern = &opts.pattern,
             sep = std::path::MAIN_SEPARATOR,
         ))
@@ -169,15 +169,17 @@ fn ensure_search_pattern_is_not_a_path(opts: &Opts) -> Result<()> {
 }
 
 fn build_pattern_regex(pattern: &str, opts: &Opts) -> Result<String> {
-    Ok(if opts.glob && !pattern.is_empty() {
-        let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
-        glob.regex().to_owned()
-    } else if opts.fixed_strings {
-        // Treat pattern as literal string if '--fixed-strings' is used
-        regex::escape(pattern)
-    } else {
-        String::from(pattern)
-    })
+    Ok(
+        if (opts.glob || looks_like_glob_pattern(pattern)) && !pattern.is_empty() {
+            let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
+            glob.regex().to_owned()
+        } else if opts.fixed_strings {
+            // Treat pattern as literal string if '--fixed-strings' is used
+            regex::escape(pattern)
+        } else {
+            String::from(pattern)
+        },
+    )
 }
 
 fn check_path_separator_length(path_separator: Option<&str>) -> Result<()> {
@@ -476,6 +478,10 @@ fn ensure_use_hidden_option_for_leading_dot_pattern(
     } else {
         Ok(())
     }
+}
+
+fn looks_like_glob_pattern(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?') || pattern.contains('[')
 }
 
 fn build_regex(pattern_regex: String, config: &Config) -> Result<regex::bytes::Regex> {
