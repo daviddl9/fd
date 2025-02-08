@@ -169,17 +169,29 @@ fn ensure_search_pattern_is_not_a_path(opts: &Opts) -> Result<()> {
 }
 
 fn build_pattern_regex(pattern: &str, opts: &Opts) -> Result<String> {
-    Ok(
-        if (opts.glob || looks_like_glob_pattern(pattern)) && !pattern.is_empty() {
-            let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
-            glob.regex().to_owned()
-        } else if opts.fixed_strings {
-            // Treat pattern as literal string if '--fixed-strings' is used
-            regex::escape(pattern)
-        } else {
-            String::from(pattern)
-        },
-    )
+    // Special-case: if the user supplies a pattern that looks like a file extension
+    // (i.e. it starts with a dot and has no glob metacharacters) and the glob flag
+    // is not enabled, then match the entire file name exactly.
+    if !opts.glob
+        && pattern.starts_with('.')
+        && pattern.len() > 1
+        && !pattern.contains('*')
+        && !pattern.contains('?')
+        && !pattern.contains('[')
+    {
+        // The regex is anchored to match the entire file name exactly.
+        return Ok(format!("^{}$", regex::escape(pattern)));
+    }
+
+    // Otherwise, continue with the original logic:
+    if (opts.glob || looks_like_glob_pattern(pattern)) && !pattern.is_empty() {
+        let glob = GlobBuilder::new(pattern).literal_separator(true).build()?;
+        Ok(glob.regex().to_owned())
+    } else if opts.fixed_strings {
+        Ok(regex::escape(pattern))
+    } else {
+        Ok(String::from(pattern))
+    }
 }
 
 fn check_path_separator_length(path_separator: Option<&str>) -> Result<()> {
