@@ -69,8 +69,37 @@ fn main() {
     }
 }
 
+fn looks_like_hidden_file(pattern: &str) -> bool {
+    // We consider a search pattern to target hidden files if:
+    // - it starts with a dot,
+    // - is longer than one character (to avoid matching just "."),
+    // - and does not contain common glob metacharacters.
+    pattern.starts_with('.')
+        && pattern.len() > 1
+        && !pattern.contains('*')
+        && !pattern.contains('?')
+        && !pattern.contains('[')
+}
+
 fn run() -> Result<ExitCode> {
-    let opts = Opts::parse();
+    // Make opts mutable so that we can override its hidden setting if needed.
+    let mut opts = Opts::parse();
+
+    // Automatically enable hidden files searching if the search pattern(s)
+    // indicate a hidden file. For example, if the user types `fd .env` or `fd .git`.
+    if !opts.hidden {
+        let primary_hidden = looks_like_hidden_file(&opts.pattern);
+        let extra_hidden = opts
+            .exprs
+            .as_ref()
+            .map(|exprs| exprs.iter().any(|expr| looks_like_hidden_file(expr)))
+            .unwrap_or(false);
+
+        if primary_hidden || extra_hidden {
+            // Force the hidden flag, so that the config will not ignore hidden files.
+            opts.hidden = true;
+        }
+    }
 
     #[cfg(feature = "completions")]
     if let Some(shell) = opts.gen_completions()? {
@@ -98,6 +127,7 @@ fn run() -> Result<ExitCode> {
 
     let config = construct_config(opts, &pattern_regexps)?;
 
+    // With our auto-enabling of hidden files, this check will now pass.
     ensure_use_hidden_option_for_leading_dot_pattern(&config, &pattern_regexps)?;
 
     let regexps = pattern_regexps
